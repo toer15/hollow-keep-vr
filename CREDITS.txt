@@ -10,10 +10,25 @@ Textures (assets/tex/) - Poly Haven, CC0 1.0 (public domain), 1K JPG:
   wood_*   = "Wood Planks"          https://polyhaven.com/a/wood_planks
   metal_*  = "Rusty Metal 02"       https://polyhaven.com/a/rusty_metal_02
 
+  bark_*   = "Pine Bark"            https://polyhaven.com/a/pine_bark
+  forest_* = "Forest Leaves 02"     https://polyhaven.com/a/forest_leaves_02
+  trail_*  = "Brown Mud Leaves 01"  https://polyhaven.com/a/brown_mud_leaves_01
+
 Models (assets/models/):
+  Poly Haven, CC0 1.0 (decimated with gltf-transform/meshoptimizer, textures resized to 512 px):
+  antique_estoc.glb      - "Antique Estoc" (player sword)      https://polyhaven.com/a/antique_estoc
+  dead_tree_trunk.glb    - "Dead Tree Trunk" (fallen logs)     https://polyhaven.com/a/dead_tree_trunk
+  dead_tree_trunk_02.glb - "Dead Tree Trunk 02"                https://polyhaven.com/a/dead_tree_trunk_02
+  fern_02.glb            - "Fern 02"                           https://polyhaven.com/a/fern_02
+  grass_medium_01.glb    - "Grass Medium 01"                   https://polyhaven.com/a/grass_medium_01
+  rock_moss_set_01.glb   - "Rock Moss Set 01"                  https://polyhaven.com/a/rock_moss_set_01
+  Poly Pizza, CC0 1.0:
+  house.glb       - "Town House" (Quaternius)  https://poly.pizza/m/imVkxz7oZD
+  torch_stick.glb - "Torch"                    https://poly.pizza/m/Gq38E7hFZw
+
   zombie.glb  - "Zombie" by Quaternius (Zombie Apocalypse Kit), CC0 1.0. https://poly.pizza/m/VlXjG0N8Eg / https://quaternius.com
   soldier.glb - "Soldier.glb" from the three.js examples (examples/models/gltf/Soldier.glb), character & animations
                 originally from Adobe Mixamo. Distributed with three.js; Mixamo content is royalty-free for use in
                 projects but is not CC0 - replace with a CC0 human if a fully public-domain build is required.
 
-Longsword, sheath, torch, cloak, castle props, particles, cobwebs, parchment and all audio are procedural (generated in code).
+Standing dead trees (procedural geometry + Poly Haven bark), sheath, hand torch, cloak, castle props, sky shader, particles, cobwebs, parchment and all audio are procedural (generated in code).
