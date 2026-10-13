@@ -167,6 +167,8 @@ const cloakBase=cloakG.attributes.position.array.slice();
 async function loadAvatar(){const g=await loadG('assets/models/soldier.glb');av=g.scene;avatar.add(av);
  av.traverse(o=>{if(o.isBone)bones[o.name.replace('mixamorig','').replace(':','')]=o;
   if(o.isMesh){o.frustumCulled=false;o.castShadow=false;if(/visor/i.test(o.name))o.visible=false;else{o.material=o.material.clone();o.material.color.set(0x5a4232);o.material.metalness=.1;o.material.roughness=.75;}}});
+ av.updateMatrixWorld(true);computeHandOffsets();
+ for(const c of g.animations)c.tracks=c.tracks.filter(tr=>!/(Left|Right)(Arm|ForeArm|Hand)\.(quaternion|position|scale)$/.test(tr.name));
  avMixer=new THREE.AnimationMixer(av);for(const c of g.animations)avActs[c.name]=avMixer.clipAction(c);avActs.Idle?.play();
  av.updateMatrixWorld(true);avEye=bones.Head.getWorldPosition(new THREE.Vector3()).y+.06;neckRel=bones.Neck.getWorldQuaternion(new THREE.Quaternion());
  // hide head from first-person view (head follows HMD but is collapsed so it doesn't block the camera)
@@ -186,7 +188,27 @@ function twoBoneIK(side,target,handQuat){const S=side?'Right':'Left';const up=bo
  const elbow=sh.clone().addScaledVector(d,a).addScaledVector(pole,r);aim(up,lo,elbow);aim(lo,hd,sh.clone().addScaledVector(d,L));
  setWorldQuat(hd,handQuat);}
 // Mixamo hand: bone +Y runs along fingers. Map to controller grip: fingers forward (-Z), palm inward.
-const handOff=[new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2,0,-Math.PI/2)),new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2,0,Math.PI/2))];
+// Hand offsets derived from the rig's bind pose (robust to whatever local axes the rig uses).
+// For each hand bone we measure, in bone-local space: F = wrist->middle knuckle (finger direction),
+// S = pinky knuckle->index knuckle (thumb side), N = palm normal (left: F x S, right: S x F).
+// WebXR grip space: -Z runs along the held object toward the thumb/index side, X is perpendicular to the palm
+// (palm faces +X for the left hand, -X for the right), so S_g=(0,0,-1), N_g=(+-1,0,0), F_g=N_g-consistent.
+// handOff[i] maps bone-local basis -> grip basis, so boneWorld = gripWorld * handOff[i] exactly.
+const handOff=[new THREE.Quaternion(),new THREE.Quaternion()],palmOff=[new THREE.Vector3(0,0,.07),new THREE.Vector3(0,0,.07)],handCorr=[new THREE.Quaternion(),new THREE.Quaternion()];
+function basis(F,S,left){F=F.clone().normalize();const N=left?F.clone().cross(S):S.clone().cross(F);N.normalize();const S2=left?N.clone().cross(F):F.clone().cross(N);// re-orthogonalise
+ return new THREE.Matrix4().makeBasis(F,N,S2.normalize());}
+function computeHandOffsets(){for(let i=0;i<2;i++){const L=i?'Right':'Left';const hd=bones[L+'Hand'],mid=bones[L+'HandMiddle1'],idx=bones[L+'HandIndex1'],pk=bones[L+'HandPinky1'];if(!hd||!mid||!idx||!pk)continue;
+  const hw=hd.getWorldPosition(new THREE.Vector3()),mw=mid.getWorldPosition(new THREE.Vector3()),iw=idx.getWorldPosition(new THREE.Vector3()),pw=pk.getWorldPosition(new THREE.Vector3());
+  const qb=hd.getWorldQuaternion(new THREE.Quaternion()),qi=qb.clone().invert();
+  const Fb=mw.clone().sub(hw).applyQuaternion(qi),Sb=iw.clone().sub(pw).applyQuaternion(qi);const len=mw.distanceTo(hw);
+  const Mb=basis(Fb,Sb,i===0);
+  // grip-space target basis
+  const Sg=new THREE.Vector3(0,0,-1),Ng=new THREE.Vector3(i===0?1:-1,0,0);const Fg=i===0?Sg.clone().cross(Ng):Ng.clone().cross(Sg);
+  const Mg=basis(Fg,Sg,i===0);
+  const R=Mg.clone().multiply(Mb.clone().transpose());handOff[i].setFromRotationMatrix(R);
+  // wrist sits behind the fist centroid: centroid ~ 55% along fingers + 2.5cm toward palm (grip space)
+  palmOff[i].copy(Fg).multiplyScalar(.55*len).addScaledVector(Ng,.025);
+  window.__handAxes=window.__handAxes||[];window.__handAxes[i]={Fb:Fb.normalize().toArray().map(v=>+v.toFixed(3)),Sb:Sb.normalize().toArray().map(v=>+v.toFixed(3)),len:+len.toFixed(3)};}}
 
 // ---- Controllers ----
 const c0=renderer.xr.getController(0),c1=renderer.xr.getController(1);
@@ -200,7 +222,7 @@ const handHolder=[new THREE.Group(),new THREE.Group()];scene.add(handHolder[0],h
 handHolder[0].add(wrist);
 let swordHand=-1;
 function sheathe(){swordHand=-1;sheathAnchor.add(sword);sword.position.set(0,0,-.08);sword.rotation.set(0,0,0);sfx?.swing();}
-function draw(i){swordHand=i;handHolder[i].add(sword);sword.position.set(0,0,0);sword.rotation.set(0,0,0);sfx?.swing();}
+function draw(i){swordHand=i;handHolder[i].add(sword);sword.position.set(0,0,0);sword.quaternion.copy(handCorr[i]);sfx?.swing();}
 swordHand=-1;sheathAnchor.add(sword);sword.position.set(0,0,-.08);
 const torchHand=()=>swordHand===0?1:0;
 const gripPrev=[false,false];let moving=0;
@@ -215,8 +237,10 @@ function updateAvatar(xr,dt){const hq=camera.getWorldQuaternion(new THREE.Quater
  if(av){const want=moving>.05?'Walk':'Idle';for(const n of ['Idle','Walk']){const a=avActs[n];if(!a)continue;if(n===want&&!a.isRunning())a.reset().fadeIn(.25).play();else if(n!==want&&a.isRunning()&&a.getEffectiveWeight()>0)a.fadeOut(.25);}
   avMixer.update(dt);bones.Head.scale.setScalar(.001);av.updateMatrixWorld(true);
   if(bones.Neck){setWorldQuat(bones.Neck,hq.clone().multiply(neckRel));}
-  for(let i=0;i<2;i++){if(xr&&!gripObj[i])continue;const hqq=handHolder[i].quaternion.clone().multiply(handOff[i]);
-   twoBoneIK(i,handHolder[i].position.clone().add(new THREE.Vector3(0,0,.07).applyQuaternion(handHolder[i].quaternion)),hqq);}
+  for(let i=0;i<2;i++){if(xr&&!gripObj[i])continue;const gq=handHolder[i].quaternion.clone().multiply(handCorr[i]);const hqq=gq.clone().multiply(handOff[i]);
+   const wristT=handHolder[i].position.clone().sub(palmOff[i].clone().multiplyScalar(avatar.scale.x).applyQuaternion(gq));
+   twoBoneIK(i,wristT,hqq);}
+  for(let i=0;i<2;i++){if(xr&&!gripObj[i])continue;const hd=bones[(i?'Right':'Left')+'Hand'];if(hd)setWorldQuat(hd,handHolder[i].quaternion.clone().multiply(handCorr[i]).multiply(handOff[i]));}
   if(bones.Spine2){bones.Spine2.getWorldPosition(torso.position);}
   {const hy=bones.Head.getWorldPosition(_v1).y/avatar.scale.y;if(hy>.5)avEye+=(hy+.1-avEye)*Math.min(1,dt*5);}}
  else torso.position.set(headW.x,headW.y-.35,headW.z).add(back);
@@ -227,6 +251,10 @@ function updateAvatar(xr,dt){const hq=camera.getWorldQuaternion(new THREE.Quater
   if(g&&!gripPrev[i]&&swordHand===-1&&handHolder[i].position.distanceTo(sa)<.4&&handHolder[i].position.y>headW.y-.3){draw(i);hapticI(i,1,120);}
   if(!g&&gripPrev[i]&&swordHand===i){sheathe();hapticI(i,.6,80);}gripPrev[i]=g;}
  const th=torchHand();if(torchMesh.parent!==handHolder[th])handHolder[th].add(torchMesh);}
+// Calibration: hold both controllers pointing straight forward (like holding two sword hilts), click both sticks for 2s.
+// The ideal grip pose for that stance is 'grip -Z forward, +Y up'; any residual rotation becomes a per-hand correction.
+function calibrateHands(){camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();const ideal=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(),fwd,THREE.Object3D.DEFAULT_UP));
+ for(let i=0;i<2;i++){if(!gripObj[i])continue;handCorr[i].copy(handHolder[i].quaternion.clone().invert().multiply(ideal));hapticI(i,1,200);}if(swordHand>=0)sword.quaternion.copy(handCorr[swordHand]);say('Hands calibrated. Hold both sticks in again for 2s to recalibrate.',3);}
 function hapticI(i,v,ms){srcs[i]?.gamepad?.hapticActuators?.[0]?.pulse?.(v,ms);}
 renderer.xr.addEventListener('sessionstart',()=>{document.getElementById('start').style.display='none';document.getElementById('vig').style.display='none';audioStart();});
 renderer.xr.addEventListener('sessionend',()=>{document.getElementById('vig').style.display='';});
@@ -327,7 +355,7 @@ function inFront(p){camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();const 
 function segDist(a,b,p){const ab=b.clone().sub(a),l=ab.lengthSq();if(l<1e-6)return a.distanceTo(p);const k=Math.max(0,Math.min(1,p.clone().sub(a).dot(ab)/l));return a.clone().addScaledVector(ab,k).distanceTo(p);}
 
 // ---- Loop ----
-const clock=new THREE.Clock();let snapReady=true,btnPrev={},torchFlicker=0,redFlash=0,frame=0;
+const clock=new THREE.Clock();let calibDone=false,calibT=0,snapReady=true,btnPrev={},torchFlicker=0,redFlash=0,frame=0;
 const prevTip=new THREE.Vector3(),tipW=new THREE.Vector3(),headW=new THREE.Vector3(),fwd=new THREE.Vector3(),tmp=new THREE.Vector3(),tw=new THREE.Vector3();
 const flashOverlay=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicMaterial({color:0x880000,transparent:true,opacity:0,depthTest:false,fog:false}));flashOverlay.position.z=-.3;flashOverlay.renderOrder=1000;camera.add(flashOverlay);
 
@@ -348,6 +376,7 @@ function tick(){const dt=Math.min(clock.getDelta(),.05);const t=clock.elapsedTim
    if(Math.abs(ax)<.3)snapReady=true;}
   for(const [s,k] of [[leftSrc,'l'],[rightSrc,'r']]){const b=s?.gamepad?.buttons;if(!b)continue;const pot=b[4]?.pressed,trig=b[0]?.pressed;
    if(pot&&!btnPrev[k+'p'])usePotion();if(trig&&!btnPrev[k+'t']&&(P.dead||P.won))restart();btnPrev[k+'p']=pot;btnPrev[k+'t']=trig;}}
+ {const bothSticks=xr&&leftSrc?.gamepad?.buttons[3]?.pressed&&rightSrc?.gamepad?.buttons[3]?.pressed;if(bothSticks){calibT+=dt;if(calibT>2&&!calibDone){calibDone=true;calibrateHands();}}else{calibT=0;calibDone=false;}}
  moving+=((mx||mz)&&!P.dead?1:0)-moving>0?dt*4:-dt*4;moving=Math.max(0,Math.min(1,moving));
  if(!P.dead&&!P.won&&(mx||mz)){camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();const right=tmp.crossVectors(fwd,THREE.Object3D.DEFAULT_UP).normalize();
   const sp=MOVE*(sprint?1.6:1)*dt;const dx=(fwd.x*-mz+right.x*mx)*sp,dz=(fwd.z*-mz+right.z*mx)*sp;
@@ -402,4 +431,4 @@ let debugCam=null;
 say("Your sword rests on your back: reach over your shoulder and squeeze GRIP (desktop: F). Alden Kael, former city guard. The keep of your birth rises in the fog. Find the five journal pages.",8);drawHud();
 Promise.all([loadAvatar(),loadZombies()]).then(()=>{loadEl.textContent='';window.__ready=true;}).catch(err=>{console.error('Asset load failed',err);loadEl.textContent='Asset load failed: '+err.message;});
 renderer.setAnimationLoop(tick);
-window.__game={P,enemies,dbg:()=>{const r={};for(const n of ["LeftArm","LeftForeArm","LeftHand","RightHand","Head"])r[n]=bones[n].getWorldPosition(new THREE.Vector3()).toArray().map(v=>+v.toFixed(2));r.h0=handHolder[0].position.toArray().map(v=>+v.toFixed(2));r.h1=handHolder[1].position.toArray().map(v=>+v.toFixed(2));r.cam=headW.toArray().map(v=>+v.toFixed(2));r.avEye=avEye;r.avy=avatar.position.y;return r},look:(y,p)=>{yaw=y;pitch=p},debug:(on)=>{debugCam=on?new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.05,50):null},get swordHand(){return swordHand}};
+window.__game={P,enemies,handOff,palmOff,chk:()=>[0,1].map(i=>{const hd=bones[(i?"Right":"Left")+"Hand"];const bq=hd.getWorldQuaternion(new THREE.Quaternion());const want=handHolder[i].quaternion.clone().multiply(handCorr[i]).multiply(handOff[i]);const f=new THREE.Vector3(0,1,0).applyQuaternion(bq),fg=new THREE.Vector3(0,-1,0).applyQuaternion(handHolder[i].quaternion);const c=bones[(i?"Right":"Left")+"HandMiddle1"].getWorldPosition(new THREE.Vector3());return {angErrDeg:+(bq.angleTo(want)*57.3).toFixed(2),fingerDirErrDeg:+(f.angleTo(fg)*57.3).toFixed(2),knuckleToGrip:+c.distanceTo(handHolder[i].position).toFixed(3)}}),dbg:()=>{const r={};for(const n of ["LeftArm","LeftForeArm","LeftHand","RightHand","Head"])r[n]=bones[n].getWorldPosition(new THREE.Vector3()).toArray().map(v=>+v.toFixed(2));r.h0=handHolder[0].position.toArray().map(v=>+v.toFixed(2));r.h1=handHolder[1].position.toArray().map(v=>+v.toFixed(2));r.cam=headW.toArray().map(v=>+v.toFixed(2));r.avEye=avEye;r.avy=avatar.position.y;return r},look:(y,p)=>{yaw=y;pitch=p},debug:(on)=>{debugCam=on?new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.05,50):null},get swordHand(){return swordHand}};
