@@ -32,3 +32,7 @@ Models (assets/models/):
                 projects but is not CC0 - replace with a CC0 human if a fully public-domain build is required.
 
 Standing dead trees (procedural geometry + Poly Haven bark), sheath, hand torch, cloak, castle props, sky shader, particles, cobwebs, parchment and all audio are procedural (generated in code).
+
+== v4: Real Life Physics System ==
+Real Life Physics System (grab/throw/impact, axe, tree chopping & felling): original code for this project.
+Wooden Axe (assets/models/wooden_axe.glb) - Poly Haven, CC0 - https://polyhaven.com/a/wooden_axe

@@ -20,7 +20,7 @@ const loadEl=document.getElementById('loading');
 
 // ---- Persistent settings (localStorage 'hk_settings') ----
 const SET_DEF={master:.8,music:.7,sfx:.9,ambient:.7,preset:'High',aa:'MSAA 4x',shadows:'Low',texq:'High',renderScale:1,vrScale:.9,foveation:1,refresh:72,fog:1,brightness:1,fov:75,
- armSwing:true,armSens:1,turnMode:'Snap',snapAngle:30,turnSpeed:120,vignette:true,sprintMode:'Hold',leftHanded:false,subtitles:true,haptics:true,mouseSens:1,invertY:false};
+ physics:true,armSwing:true,armSens:1,turnMode:'Snap',snapAngle:30,turnSpeed:120,vignette:true,sprintMode:'Hold',leftHanded:false,subtitles:true,haptics:true,mouseSens:1,invertY:false};
 const SET=Object.assign({},SET_DEF,JSON.parse(localStorage.getItem('hk_settings')||'{}'));
 const saveSettings=()=>localStorage.setItem('hk_settings',JSON.stringify(SET));
 // ---- Renderer ----
@@ -238,7 +238,7 @@ let swordHand=-1;
 function sheathe(){swordHand=-1;sheathAnchor.add(sword);sword.position.set(0,0,-.08);sword.rotation.set(0,0,0);sfx?.swing();}
 function draw(i){swordHand=i;handHolder[i].add(sword);sword.position.set(0,0,0);sword.quaternion.identity();sfx?.swing();}
 swordHand=-1;sheathAnchor.add(sword);sword.position.set(0,0,-.08);
-const torchHand=()=>swordHand===0?1:0;
+const torchHand=()=>{const busy=i=>swordHand===i||axeHand===i;return !busy(0)?0:!busy(1)?1:-1;};var axeHand=-1;
 const gripPrev=[false,false];let moving=0;
 function updateAvatar(xr,dt){const hq=camera.getWorldQuaternion(new THREE.Quaternion());camera.getWorldPosition(headW);
  const e=new THREE.Euler().setFromQuaternion(hq,'YXZ');let ty=torso.rotation.y;let dy=Math.atan2(Math.sin(e.y-ty),Math.cos(e.y-ty));
@@ -247,7 +247,7 @@ function updateAvatar(xr,dt){const hq=camera.getWorldQuaternion(new THREE.Quater
  avatar.position.set(headW.x+back.x,0,headW.z+back.z);avatar.rotation.y=ty;avatar.scale.setScalar(Math.max(.8,Math.min(1.3,(headW.y-.05)/avEye)));
  // hand frames
  for(let i=0;i<2;i++){const src=xr?gripObj[i]:deskHand[i];if(!src)continue;src.updateWorldMatrix(true,false);src.matrixWorld.decompose(handHolder[i].position,handHolder[i].quaternion,_v1);
-  if(!xr&&i===1&&desktopSwing>0){const k=1-desktopSwing/.35;handHolder[i].quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.sin(k*Math.PI)*1.5,Math.sin(k*Math.PI)*.9,0)));handHolder[i].position.add(new THREE.Vector3(-Math.sin(k*Math.PI)*.2,Math.sin(k*Math.PI)*.1,0).applyQuaternion(hq));}}
+  if(!xr&&i===1&&desktopSwing>0&&(swordHand===1||axeHand===1)){const k=1-desktopSwing/.35;handHolder[i].quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.sin(k*Math.PI)*1.5,Math.sin(k*Math.PI)*.9,0)));handHolder[i].position.add(new THREE.Vector3(-Math.sin(k*Math.PI)*.2,Math.sin(k*Math.PI)*.1,0).applyQuaternion(hq));}}
  if(av){const want=moving>.05?(runningNow?'Run':'Walk'):'Idle';for(const n of ['Idle','Walk','Run']){const a=avActs[n];if(!a)continue;if(n===want&&!a.isRunning())a.reset().fadeIn(.25).play();else if(n!==want&&a.isRunning()&&a.getEffectiveWeight()>0)a.fadeOut(.25);}
   avMixer.update(dt);bones.Head.scale.setScalar(.001);av.updateMatrixWorld(true);
   if(bones.Neck){setWorldQuat(bones.Neck,hq.clone().multiply(neckRel));}
@@ -262,9 +262,10 @@ function updateAvatar(xr,dt){const hq=camera.getWorldQuaternion(new THREE.Quater
  const pa=cloakG.attributes.position;for(let k=0;k<pa.count;k++){const y=cloakBase[k*3+1];pa.array[k*3+2]=cloakBase[k*3+2]+(-y)*(.15*moving+.03*Math.sin(clock.elapsedTime*2+y*4+cloakBase[k*3]*3));}pa.needsUpdate=true;
  // grab/sheathe (either hand)
  if(xr)for(let i=0;i<2;i++){const g=!!srcs[i]?.gamepad?.buttons[1]?.pressed;const sa=sheathAnchor.getWorldPosition(_v1);
-  if(g&&!gripPrev[i]&&swordHand===-1&&handHolder[i].position.distanceTo(sa)<.4&&handHolder[i].position.y>headW.y-.3){draw(i);hapticI(i,1,120);}
+  if(g&&!gripPrev[i]&&swordHand===-1&&axeHand!==i&&!(G.held[i])&&handHolder[i].position.distanceTo(sa)<.4&&handHolder[i].position.y>headW.y-.3){draw(i);hapticI(i,1,120);}
   if(!g&&gripPrev[i]&&swordHand===i){sheathe();hapticI(i,.6,80);}gripPrev[i]=g;}
- const th=torchHand();if(torchMesh.parent!==handHolder[th])handHolder[th].add(torchMesh);}
+ const th=torchHand();const tp_=th<0?hipAnchor:handHolder[th];if(torchMesh.parent!==tp_){tp_.add(torchMesh);torchMesh.position.set(0,0,0);torchMesh.rotation.set(0,0,0);if(th<0){torchMesh.position.set(.08,0,.05);torchMesh.rotation.set(.3,0,0);}}
+ updateAxeHolster(xr);}
 function hapticI(i,v,ms){if(!SET.haptics)return;srcs[i]?.gamepad?.hapticActuators?.[0]?.pulse?.(v,ms);}
 renderer.xr.addEventListener('sessionstart',()=>{onXRStart();document.getElementById('start').style.display='none';document.getElementById('vig').style.display='none';audioStart();});
 renderer.xr.addEventListener('sessionend',()=>{document.getElementById('vig').style.display='';});
@@ -351,10 +352,10 @@ function hitEnemy(e,speed){const atk=roll(1,20,ALDEN.atk);if(atk<e.ac&&speed<4){
 
 // ---- Desktop input ----
 const keys={};let sprintOn=false,yaw=0,pitch=0,locked=false,desktopSwing=0;
-addEventListener('keydown',e=>{if(e.code==='ShiftLeft'&&!e.repeat)sprintOn=!sprintOn;if(e.code==='Escape'){togglePause();return;}if(UI.mode)return;keys[e.code]=true;if(e.code==='KeyQ')usePotion();if(e.code==='KeyR'&&(P.dead||P.won))restart();if(e.code==='KeyF'&&!renderer.xr.isPresenting){swordHand===-1?draw(1):sheathe();}});
+addEventListener('keydown',e=>{if(e.code==='ShiftLeft'&&!e.repeat)sprintOn=!sprintOn;if(e.code==='Escape'){togglePause();return;}if(UI.mode)return;keys[e.code]=true;if(e.code==='KeyQ')usePotion();if(e.code==='KeyR'&&(P.dead||P.won))restart();if(e.code==='KeyE'&&!renderer.xr.isPresenting)deskGrabToggle();if(e.code==='KeyG'&&!renderer.xr.isPresenting){if(axeHand>=0)holsterAxe();else{if(swordHand>=0)sheathe();if(G.held[1])release(1);drawAxe(1);}}if(e.code==='KeyF'&&!renderer.xr.isPresenting&&!G.held[1]){if(axeHand>=0)holsterAxe();swordHand===-1?draw(1):sheathe();}});
 addEventListener('keyup',e=>keys[e.code]=false);
 document.getElementById('play').onclick=()=>{audioStart();startCutscene();renderer.domElement.requestPointerLock?.();document.getElementById('start').style.display='none';};
-renderer.domElement.addEventListener('click',()=>{if(UI.mode)return;if(CS.state!=='done'){trySkip();return;}if(P.dead||P.won)return restart();if(!locked)renderer.domElement.requestPointerLock?.();else if(desktopSwing<=0&&swordHand>=0){desktopSwing=.35;sfx.swing();}});
+renderer.domElement.addEventListener('click',()=>{if(UI.mode)return;if(CS.state!=='done'){trySkip();return;}if(P.dead||P.won)return restart();if(!locked)renderer.domElement.requestPointerLock?.();else if(G.held[1]){deskThrow();}else if(axeHand>=0&&desktopSwing<=0){desktopSwing=.35;sfx.swing();}else if(desktopSwing<=0&&swordHand>=0){desktopSwing=.35;sfx.swing();}});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===renderer.domElement;if(!locked&&!UI.mode&&!renderer.xr.isPresenting&&CS.state==='done'&&!P.dead&&!P.won)openMenu('pause');});
 addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.0025*SET.mouseSens;pitch=Math.max(-1.4,Math.min(1.4,pitch-e.movementY*.0025*SET.mouseSens*(SET.invertY?-1:1)));});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
@@ -397,7 +398,7 @@ function tick(){const dt=Math.min(clock.getDelta(),.05);const t=clock.elapsedTim
   const sp=MOVE*(sprint?1.6:1)*dt;const dx=(fwd.x*-mz+right.x*mx)*sp,dz=(fwd.z*-mz+right.z*mx)*sp;
   camera.getWorldPosition(headW);const hp=new THREE.Vector3(headW.x,0,headW.z);const before=hp.clone();tryMove(hp,dx,dz);rig.position.x+=hp.x-before.x;rig.position.z+=hp.z-before.z;}
  camera.updateMatrixWorld(true);camera.getWorldPosition(headW);const pp=new THREE.Vector3(headW.x,0,headW.z);
- updateAvatar(xr,dt);
+ updateAvatar(xr,dt);updateGrab(dt,xr,pp);updateAxe(dt,xr,pp);updateFallingTrees(dt);
  // wall torch light pool -> nearest sconces
  if(frame%15===0){const s=torchSpots.slice().sort((a,b)=>a.distanceToSquared(pp)-b.distanceToSquared(pp));poolLights.forEach((l,i)=>s[i]&&l.position.copy(s[i]));}
  poolLights.forEach((l,i)=>l.intensity=5+Math.sin(t*11+i*3)*.8+Math.random()*.5);
@@ -440,12 +441,13 @@ function tick(){const dt=Math.min(clock.getDelta(),.05);const t=clock.elapsedTim
   if(swinging&&!P.dead){const c=tmp.set(m.position.x,1.2,m.position.z);
    const near=segDist(prevTip,tipW,c)<.5||tipW.distanceTo(c)<.6||(!xr&&d<2.2&&inFront(m.position));if(near&&(e.hitCd||0)<=0){e.hitCd=.4;if(hitEnemy(e,xr?tipSpeed:5))hapticI(swordHand,1,90);}}
   e.hitCd=(e.hitCd||0)-dt;}
+ if(swinging&&SET.physics)weaponTreeHit(tipW,tipW.clone().sub(prevTip).divideScalar(Math.max(dt,1e-3)),tipSpeed,false,swordHand,xr);
  prevTip.copy(tipW);
  if(debugCam){camera.getWorldDirection(fwd);debugCam.position.copy(headW).addScaledVector(fwd,1.8);debugCam.position.y=1.4;debugCam.lookAt(headW.x,1.0,headW.z);debugCam.layers.enableAll();renderer.render(scene,debugCam);}else renderer.render(scene,camera);}
 let debugCam=null;
 
 function introMsg(){say("Your sword rests on your back: reach over your shoulder and squeeze GRIP (desktop: F). Alden Kael, former city guard. The forest is silent. Follow the torch-lit trail through the forest to the old house. Journal pages lie along the way.",8);}drawHud();
-Promise.all([loadAvatar(),loadZombies(),loadForestModels()]).then(()=>{buildCutscene();loadEl.textContent='';window.__ready=true;onAssetsReady();}).catch(err=>{console.error('Asset load failed',err);loadEl.textContent='Asset load failed: '+err.message;});
+Promise.all([loadAvatar(),loadZombies(),loadForestModels(),loadAxe()]).then(()=>{buildCutscene();loadEl.textContent='';window.__ready=true;onAssetsReady();}).catch(err=>{console.error('Asset load failed',err);loadEl.textContent='Asset load failed: '+err.message;});
 window.__game={P,enemies,breakdown:()=>{const r={};scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isSprite)&&o.visible){let v=o;while(v){if(!v.visible)return;v=v.parent;}const n=o.isInstancedMesh?'inst:'+(o.geometry.attributes.position.count):o.isSkinnedMesh?'skinned':o.isSprite?'sprite':o.type;const t=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3*(o.isInstancedMesh?o.count:1);r[n]=r[n]||[0,0];r[n][0]++;r[n][1]+=t|0;}});return r},treeTris:()=>F.treeGeos.map(g=>g.attributes.position.count/3),swordBox:()=>{const b=new THREE.Box3().setFromObject(sword);return [b.min.toArray(),b.max.toArray(),sword.children[0]?.scale.x]},tp:(x,z,y)=>{rig.position.set(x,0,z);yaw=y||0;},trailX,F:()=>F,CS:()=>({state:CS.state,t:+CS.t.toFixed(2)}),skip:()=>trySkip(true),handOff,palmOff,chk:()=>[0,1].map(i=>{const hd=bones[(i?"Right":"Left")+"Hand"];const bq=hd.getWorldQuaternion(new THREE.Quaternion());const want=handHolder[i].quaternion.clone().multiply(handOff[i]);const f=new THREE.Vector3(0,1,0).applyQuaternion(bq),fg=new THREE.Vector3(0,-1,0).applyQuaternion(handHolder[i].quaternion);const c=bones[(i?"Right":"Left")+"HandMiddle1"].getWorldPosition(new THREE.Vector3());return {angErrDeg:+(bq.angleTo(want)*57.3).toFixed(2),fingerDirErrDeg:+(f.angleTo(fg)*57.3).toFixed(2),knuckleToGrip:+c.distanceTo(handHolder[i].position).toFixed(3)}}),dbg:()=>{const r={};for(const n of ["LeftArm","LeftForeArm","LeftHand","RightHand","Head"])r[n]=bones[n].getWorldPosition(new THREE.Vector3()).toArray().map(v=>+v.toFixed(2));r.h0=handHolder[0].position.toArray().map(v=>+v.toFixed(2));r.h1=handHolder[1].position.toArray().map(v=>+v.toFixed(2));r.cam=headW.toArray().map(v=>+v.toFixed(2));r.avEye=avEye;r.avy=avatar.position.y;return r},look:(y,p)=>{yaw=y;pitch=p},debug:(on)=>{debugCam=on?new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.05,50):null},get swordHand(){return swordHand}};
 
 // =================== OPENING CUTSCENE ===================
@@ -613,13 +615,14 @@ function buildForest(){F={trees:[],door:null,scares:[],wraithSpawns:[],sky:null,
  let tries=0;while(tries++<4000&&per.flat().length<190){const z=Z1+5+Math.random()*(Z0-Z1-8),x=trailX(z)+(Math.random()-.5)*2*(4+Math.random()*36);
   const d=Math.abs(x-trailX(z));if(d<3.6)continue;if(z<-120&&Math.abs(x-trailX(-140))<14)continue;// clearing around house
   let ok=true;for(const t of F.trees)if((t.x-x)**2+(t.z-z)**2<4){ok=false;break;}if(!ok)continue;
-  const sc=.8+Math.random()*.7;const t={x,z,r:.35*sc};F.trees.push(t);const k=key(x,z);if(!F.hash.has(k))F.hash.set(k,[]);F.hash.get(k).push(t);
-  per[Math.floor(Math.random()*4)].push(new THREE.Matrix4().compose(new THREE.Vector3(x,0,z),new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random()-.5)*.12,Math.random()*6.28,(Math.random()-.5)*.12)),new THREE.Vector3(sc,sc*(.9+Math.random()*.4),sc)));}
+  const sc=.8+Math.random()*.7;const v=Math.floor(Math.random()*4);const t={x,z,r:.35*sc,sc,v,hits:0};F.trees.push(t);const k=key(x,z);if(!F.hash.has(k))F.hash.set(k,[]);F.hash.get(k).push(t);
+  per[v].push(t.M=new THREE.Matrix4().compose(new THREE.Vector3(x,0,z),new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random()-.5)*.12,Math.random()*6.28,(Math.random()-.5)*.12)),new THREE.Vector3(sc,sc*(.9+Math.random()*.4),sc)));}
  per.forEach((list,v)=>addChunked(F.treeGeos[v],barkMat,list,{shadow:true}));
  // fire-sticks along the trail
- for(let z=-2,k=0;z>-128;z-=9,k++){const side=k%2?1:-1;const x=trailX(z)+side*2.4;
-  const st=new THREE.Mesh(new THREE.CylinderGeometry(.035,.05,1.5,6),barkMat);st.position.set(x,.72,z);st.rotation.z=side*.06;st.castShadow=true;scene.add(st);
-  const f=makeFlame(1.15);f.position.set(x,1.62,z);scene.add(f);torchSpots.push(new THREE.Vector3(x,1.75,z));(F.sticks=F.sticks||[]).push(new THREE.Vector3(x,1.42,z));}
+ F.stickObjs=[];for(let z=-2,k=0;z>-128;z-=9,k++){const side=k%2?1:-1;const x=trailX(z)+side*2.4;
+  // each fire-stick is a group (stick + head + flame) so it can be pulled out of the ground and carried / thrown
+  const grp=new THREE.Group();grp.position.set(x,0,z);grp.rotation.z=side*.06;const st=new THREE.Mesh(new THREE.CylinderGeometry(.035,.05,1.5,6),barkMat);st.position.y=.72;st.castShadow=true;grp.add(st);
+  const f=makeFlame(1.15);f.position.set(0,1.62,0);grp.add(f);scene.add(grp);const spot=new THREE.Vector3(x,1.75,z);torchSpots.push(spot);F.stickObjs.push({grp,spot});(F.sticks=F.sticks||[]).push(new THREE.Vector3(x,1.42,z));}
  // pages on stumps beside the trail
  for(const z of [-16,-38,-61,-84,-106]){const side=hash2(z,5)>.5?1:-1;const x=trailX(z)+side*3;
   const stump=new THREE.Mesh(new THREE.CylinderGeometry(.32,.4,.7,10),barkMat);stump.position.set(x,.35,z);scene.add(stump);
@@ -636,7 +639,7 @@ function buildForest(){F={trees:[],door:null,scares:[],wraithSpawns:[],sky:null,
 }
 // Spatial chunking (20 m along the trail) so frustum + fog-distance culling work on instanced vegetation
 function addChunked(geo,mat,list,{shadow=false,receive=true}={}){const groups=new Map();for(const M of list){const z=M.elements[14];const k=Math.floor(z/30);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(M);}
- for(const [k,arr] of groups){const im=new THREE.InstancedMesh(geo,mat,arr.length);arr.forEach((M,i)=>im.setMatrixAt(i,M));im.computeBoundingSphere();im.castShadow=shadow;im.receiveShadow=receive;scene.add(im);(F.chunks=F.chunks||[]).push({im,z:k*30+15});}}
+ for(const [k,arr] of groups){const im=new THREE.InstancedMesh(geo,mat,arr.length);arr.forEach((M,i)=>{im.setMatrixAt(i,M);M._ref={im,i};});im.computeBoundingSphere();im.castShadow=shadow;im.receiveShadow=receive;scene.add(im);(F.chunks=F.chunks||[]).push({im,z:k*30+15});}}
 function placeInstanced(g,mats,{shadow=false,strip=false}={}){g.scene.updateMatrixWorld(true);const meshes=[];g.scene.traverse(o=>o.isMesh&&meshes.push(o));
  meshes.forEach((m,mi)=>{const list=mats(mi,meshes.length);if(!list.length)return;const base=m.matrixWorld.clone();if(strip)base.setPosition(0,0,0);addChunked(m.geometry,m.material,list.map(M=>M.clone().multiply(base)),{shadow});});}
 function randOffTrail(minD,maxD,z0=-140,z1=6){for(let i=0;i<50;i++){const z=z0+Math.random()*(z1-z0),side=Math.random()<.5?-1:1,x=trailX(z)+side*(minD+Math.random()*(maxD-minD));if(!solid(x,z))return [x,z];}return [trailX(0)+6,0];}
@@ -650,7 +653,8 @@ async function loadForestModels(){const [logs,logs2,fern,grass,rocks,torchM,hous
  // mossy rocks
  placeInstanced(rocks,(mi,n)=>mi>2?[]:Array.from({length:12},()=>{const [x,z]=randOffTrail(3,22);return _M(x,-.1,z,Math.random()*6.28,.5+Math.random()*.9);}),{strip:true,shadow:true});
  // torch heads on the fire-sticks
- {const b=new THREE.Box3().setFromObject(torchM.scene);const h=b.max.y-b.min.y;const s=.42/h;placeInstanced(torchM,()=>F.sticks.map(p=>_M(p.x,p.y-b.min.y*s,p.z,0,s)));}
+ {const b=new THREE.Box3().setFromObject(torchM.scene);const h=b.max.y-b.min.y;const s=.42/h;for(const so of F.stickObjs){const c=torchM.scene.clone(true);c.scale.multiplyScalar(s);c.position.y=1.42-b.min.y*s;so.grp.add(c);}}
+ buildGrabbables();
  // the old house (CC0 Town House), weathered & darkened, facing the trail
  {const hs=house.scene;const b=new THREE.Box3().setFromObject(hs);const w=b.max.x-b.min.x;const s=17/w;hs.scale.multiplyScalar(s);
   const hx=trailX(-140);hs.position.set(hx,0,-140);hs.updateMatrixWorld(true);const b2=new THREE.Box3().setFromObject(hs);hs.position.y-=b2.min.y;hs.position.z-=b2.max.z-(-132);hs.updateMatrixWorld(true);
@@ -739,7 +743,7 @@ const SETTINGS=[
    ['renderScale','Render scale (desktop)','slider',.5,1.5],['fog','Fog density','slider',.4,1.6],['brightness','Brightness','slider',.5,1.8],['fov','Field of view (desktop)','slider',55,100],['perf','Performance overlay','toggle']]],
  ['VR & Comfort',[['vrScale','VR framebuffer scale','slider',.5,1.2],['foveation','Fixed foveation','slider',0,1],['refresh','Target refresh rate','choice',[72,90,120]],['turnMode','Turning','choice',['Snap','Smooth']],['snapAngle','Snap turn angle','choice',[15,30,45,60]],
    ['turnSpeed','Smooth turn speed','slider',30,240],['vignette','Comfort vignette','toggle'],['armSwing','Arm-swing running','toggle'],['armSens','Arm-swing sensitivity','slider',.5,2],['leftHanded','Left-handed mode','toggle']]],
- ['Controls',[['sprintMode','Sprint','choice',['Hold','Toggle']],['subtitles','Subtitles','toggle'],['haptics','Haptics','toggle'],['mouseSens','Mouse sensitivity','slider',.2,3],['invertY','Invert Y','toggle']]]];
+ ['Controls',[['physics','Real Life Physics System','toggle'],['sprintMode','Sprint','choice',['Hold','Toggle']],['subtitles','Subtitles','toggle'],['haptics','Haptics','toggle'],['mouseSens','Mouse sensitivity','slider',.2,3],['invertY','Invert Y','toggle']]]];
 SET_DEF.perf=false;if(SET.perf===undefined)SET.perf=false;
 function drawUI(){const g=UI.ctx;UI.items=[];PANEL_BG(g);const m=UI.mode;g.textAlign='center';
  if(m==='loading'){title(g,'THE HOLLOW KEEP','Alden Kael');const p=UI.progress;g.fillStyle='#8a7a66';g.font='24px Georgia,serif';g.fillText(['The forest stirs...','Something watches from the trees...','Lighting the fire-sticks...','Gathering the pages of the past...'][Math.floor(Date.now()/2500)%4],512,420);
@@ -863,3 +867,121 @@ window.__laserTest=()=>{const m=UI.mode;openMenu(m||'pause');UI.panel.visible=tr
  const it=UI.items.find(i=>i.label==='Settings');const tgt=new THREE.Vector3((it.x+it.w/2)/1024-.5,.5-(it.y+it.h/2)/768,0);tgt.x*=1.6;tgt.y*=1.2;UI.panel.localToWorld(tgt);
  const fake=new THREE.Object3D();fake.position.copy(hp).add(new THREE.Vector3(.2,-.3,0));fake.lookAt(tgt);fake.rotateY(Math.PI);fake.updateMatrixWorld(true);// -Z toward target
  const h=laserHit(fake);if(!h)return {hit:false};uiHover(h.x,h.y);const label=UI.items[UI.hover]?.label;uiPress(h.x,h.y);return {hit:true,label,modeAfter:UI.mode};};
+
+// =================== Grab & throw physics ===================
+// Liftable props: rocks, sticks, bones, skulls, candles, lanterns, crates (big crate = two-handed), potions, fire-sticks.
+// Held objects follow the hand through a mass-dependent spring (heavy = laggy); release throws with hand linear + angular velocity.
+var G={bodies:[],held:[null,null],hover:[null,null],gripPrev:[false,false],hist:[[],[]]};
+function buildGrabbables(){const add=(obj,o)=>{obj.traverse(m=>{if(m.isMesh){m.castShadow=true;m.material=m.material.clone();}});scene.add(obj);
+  const b=new THREE.Box3().setFromObject(obj);const r=b.getSize(new THREE.Vector3()).length()/2;
+  const body={obj,mass:o.mass,r:Math.max(.05,r),bottom:obj.position.y-b.min.y,vel:new THREE.Vector3(),ang:new THREE.Vector3(),hands:new Set(),offs:[null,null],sleep:true,kind:o.kind,mat:o.mat||'wood',lastHit:0,spot:o.spot||null,potion:o.potion};G.bodies.push(body);return body;};
+ const boneMat=new THREE.MeshStandardMaterial({color:0xcfc4a8,roughness:.8});
+ const near=(a,b)=>randOffTrail(a,b,-110,6);
+ for(let k=0;k<9;k++){const [x,z]=near(1.8,5);const s=.06+Math.random()*.1;const m=new THREE.Mesh(new THREE.DodecahedronGeometry(s,1),blockMat);m.scale.y=.7;m.position.set(x,s*.7,z);add(m,{mass:.3+s*20,kind:'rock',mat:'stone'});}
+ for(let k=0;k<6;k++){const [x,z]=near(1.8,6);const g=new THREE.Group();const l=.6+Math.random()*.5;const c=new THREE.Mesh(new THREE.CylinderGeometry(.018,.026,l,5),barkMat);c.rotation.z=Math.PI/2;g.add(c);const tw=new THREE.Mesh(new THREE.CylinderGeometry(.008,.012,.25,4),barkMat);tw.position.set(l*.2,.07,0);tw.rotation.z=.6;g.add(tw);g.position.set(x,.03,z);g.rotation.y=Math.random()*6;add(g,{mass:.5,kind:'stick'});}
+ for(let k=0;k<4;k++){const [x,z]=near(2,6);const sk=new THREE.Mesh(new THREE.SphereGeometry(.1,10,8),boneMat);sk.scale.set(1,.9,1.15);sk.position.set(x,.09,z);add(sk,{mass:.9,kind:'skull',mat:'bone'});
+  const [x2,z2]=near(2,6);const bn=new THREE.Mesh(new THREE.CylinderGeometry(.02,.025,.42,6),boneMat);bn.rotation.set(Math.PI/2,0,Math.random()*3);bn.position.set(x2,.03,z2);add(bn,{mass:.4,kind:'bone',mat:'bone'});}
+ for(let k=0;k<3;k++){const [x,z]=near(1.8,4);const c=new THREE.Group();const w=new THREE.Mesh(new THREE.CylinderGeometry(.03,.035,.16,8),new THREE.MeshStandardMaterial({color:0xeee0c0,emissive:0x221100}));w.position.y=.08;c.add(w);const f=makeFlame(.4);f.position.y=.2;c.add(f);c.position.set(x,0,z);add(c,{mass:.25,kind:'candle'});}
+ for(let k=0;k<2;k++){const [x,z]=near(1.8,4);const L=new THREE.Group();const fr=new THREE.Mesh(new THREE.BoxGeometry(.14,.2,.14),new THREE.MeshStandardMaterial({color:0x222222,metalness:.8,roughness:.4,transparent:true,opacity:.55}));fr.position.y=.12;L.add(fr);const top=new THREE.Mesh(new THREE.ConeGeometry(.1,.08,4),metalMat);top.position.y=.26;top.rotation.y=Math.PI/4;L.add(top);const f=makeFlame(.5);f.position.y=.12;L.add(f);L.position.set(x,0,z);add(L,{mass:1.2,kind:'lantern',mat:'metal'});}
+ for(const [sz,mass] of [[.3,2.5],[.3,2.5],[.55,7]]){const [x,z]=near(2.5,5);const c=new THREE.Mesh(new THREE.BoxGeometry(sz,sz,sz),woodMat);c.position.set(x,sz/2,z);c.rotation.y=Math.random()*3;add(c,{mass,kind:sz>.5?'big crate':'crate'});}
+ for(let k=0;k<3;k++){const [x,z]=near(1.8,4,-90);const pb=new THREE.Group();const gl_=new THREE.Mesh(new THREE.CylinderGeometry(.035,.045,.11,10),new THREE.MeshStandardMaterial({color:0xaa1020,emissive:0x400008,roughness:.15,transparent:true,opacity:.85}));gl_.position.y=.055;const nk=new THREE.Mesh(new THREE.CylinderGeometry(.012,.015,.05,6),gl_.material);nk.position.y=.135;pb.add(gl_,nk);pb.position.set(x,0,z);add(pb,{mass:.3,kind:'potion',mat:'glass',potion:true});}
+ for(const so of F.stickObjs)add(so.grp,{mass:1.1,kind:'fire-stick',spot:so.spot});
+}
+function setHighlight(b,on){b.obj.traverse(m=>{if(m.isMesh&&m.material.emissive){if(on){m.userData.em=m.userData.em??m.material.emissive.getHex();m.material.emissive.setHex(0x553311);}else if(m.userData.em!==undefined)m.material.emissive.setHex(m.userData.em);}});}
+function nearestBody(p,maxD){let best=null,bd=1e9;for(const b of G.bodies){if(b.hands.size&&b.mass<5)continue;const c=b.obj.getWorldPosition(new THREE.Vector3());c.y+=b.r*.3;const d=c.distanceTo(p)-b.r;if(d<maxD&&d<bd){bd=d;best=b;}}return best;}
+function grab(b,i){if(b.potion){P.potions++;drawHud();scene.remove(b.obj);G.bodies.splice(G.bodies.indexOf(b),1);sfx.page();hapticI(i,.8,60);say('Picked up a healing potion.',2);return;}
+ b.hands.add(i);G.held[i]=b;b.sleep=false;const hw=handHolder[i];hw.updateMatrixWorld(true);b.obj.updateMatrixWorld(true);
+ b.offs[i]=new THREE.Matrix4().copy(hw.matrixWorld).invert().multiply(b.obj.matrixWorld); // object pose in hand space
+ hapticI(i,.5+Math.min(.5,b.mass/8),40);if(b.mass>=5&&b.hands.size<2)say('Too heavy for one hand — grab it with both.',2);}
+function release(i){const b=G.held[i];if(!b)return;G.held[i]=null;b.hands.delete(i);b.offs[i]=null;if(b.hands.size)return;
+ const h=G.hist[i];if(h.length>=2){const a=h[0],z=h[h.length-1],dt=Math.max(1e-3,z.t-a.t);b.vel.copy(z.p).sub(a.p).divideScalar(dt);
+  const dq=z.q.clone().multiply(a.q.clone().invert());const ang=2*Math.acos(Math.min(1,Math.abs(dq.w)));const ax=new THREE.Vector3(dq.x,dq.y,dq.z);if(ax.lengthSq()>1e-8)b.ang.copy(ax.normalize().multiplyScalar(ang/dt*(dq.w<0?-1:1)));}
+ b.vel.multiplyScalar(1/Math.sqrt(Math.max(1,b.mass)));b.ang.multiplyScalar(1/Math.max(1,b.mass));b.thrown=b.vel.length()>2;b.sleep=false;}
+const _tm=new THREE.Matrix4(),_tp=new THREE.Vector3(),_tq=new THREE.Quaternion(),_ts=new THREE.Vector3();
+function updateGrab(dt,xr,pp){const now=clock.elapsedTime;
+ for(let i=0;i<2;i++){const hh=handHolder[i];const hist=G.hist[i];hist.push({t:now,p:hh.position.clone(),q:hh.quaternion.clone()});while(hist.length>5)hist.shift();}
+ if(xr)for(let i=0;i<2;i++){if(!gripObj[i])continue;const g=!!srcs[i]?.gamepad?.buttons[1]?.pressed;const hp=handHolder[i].position;
+  // hover highlight + haptic tick (not for the sword hand)
+  const hv=(swordHand===i||axeHand===i||G.held[i]||!SET.physics)?null:nearestBody(hp,.12);if(hv!==G.hover[i]){if(G.hover[i]&&G.hover[i]!==G.hover[1-i])setHighlight(G.hover[i],false);if(hv){setHighlight(hv,true);hapticI(i,.15,15);}G.hover[i]=hv;}
+  if(g&&!G.gripPrev[i]&&swordHand!==i&&axeHand!==i&&!G.held[i]){const sa=sheathAnchor.getWorldPosition(_v1);const nearSheath=(swordHand===-1&&hp.distanceTo(sa)<.4&&hp.y>headW.y-.3)||(axeHand===-1&&hp.distanceTo(hipAnchor.getWorldPosition(_v2))<.3); // weapon draws have priority
+   if(!nearSheath&&hv)grab(hv,i);}
+  if(!g&&G.gripPrev[i]&&G.held[i])release(i);G.gripPrev[i]=g;}
+ // integrate
+ for(const b of G.bodies){const o=b.obj;
+  if(b.hands.size){const targets=[...b.hands].map(i=>{_tm.copy(handHolder[i].matrixWorld).multiply(b.offs[i]);_tm.decompose(_tp,_tq,_ts);return {p:_tp.clone(),q:_tq.clone()};});
+   const tp=targets[0].p.clone();if(targets[1])tp.lerp(targets[1].p,.5);const heavy=b.mass>=5&&b.hands.size<2;
+   if(heavy){tp.y=Math.min(tp.y,b.bottom+.05);} // one hand can only drag it
+   const k=1-Math.exp(-dt*(heavy?3:60/Math.max(1,b.mass)));const prev=o.position.clone();o.position.lerp(tp,k);o.quaternion.slerp(targets[0].q,k);
+   if(o.position.y<b.bottom)o.position.y=b.bottom;b.vel.copy(o.position).sub(prev).divideScalar(Math.max(dt,1e-3));}
+  else if(!b.sleep){b.vel.y-=9.81*dt;const step=b.vel.clone().multiplyScalar(dt);const nx=o.position.x+step.x,nz=o.position.z+step.z;
+   if(solid(nx,nz)){b.vel.x*=-.4;b.vel.z*=-.4;impact(b,b.vel.length()+2);}else{o.position.x=nx;o.position.z=nz;}o.position.y+=step.y;
+   if(b.ang.lengthSq()>1e-6){o.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(b.ang.clone().normalize(),b.ang.length()*dt));b.ang.multiplyScalar(Math.exp(-dt*1.2));}
+   if(o.position.y<b.bottom){o.position.y=b.bottom;const vy=-b.vel.y;if(vy>1.2)impact(b,vy);b.vel.y=vy>.8?vy*.35:0;b.vel.x*=.7;b.vel.z*=.7;b.ang.multiplyScalar(.6);
+    if(b.vel.lengthSq()<.02){b.vel.set(0,0,0);b.ang.set(0,0,0);b.sleep=true;b.thrown=false;}}
+   // enemy hits
+   const sp=b.vel.length();if(sp>2.5&&now-b.lastHit>.3)for(const e of enemies){if(e.dead)continue;const ep=e.mesh.position;if(Math.hypot(ep.x-o.position.x,ep.z-o.position.z)<.55&&o.position.y<1.9){b.lastHit=now;
+     const dmg=Math.max(1,Math.round(b.mass*sp*.35+Math.random()*2));e.hp-=dmg;e.stun=Math.min(1.5,.3+b.mass*.15);impact(b,sp);sfx.hit();if(e.hp<=0){e.dead=true;e.cur=null;play(e,'Death',.1);e.deadT=3;say(`The ${e.type} falls.`,2);}else if(e.A.HitReact){e.cur=null;play(e,'HitReact',.05);}
+     b.vel.multiplyScalar(-.3);break;}}}
+  if(b.spot){b.spot.copy(o.localToWorld(new THREE.Vector3(0,1.75,0)));}}
+ // desktop: held object rides in the right hand
+}
+function impact(b,v){if(!AC||clock.elapsedTime-(b.lastSnd||0)<.08)return;b.lastSnd=clock.elapsedTime;const vol=Math.min(.5,.05*v*Math.sqrt(b.mass));
+ const f={stone:180,bone:420,metal:900,glass:1800,wood:260}[b.mat]||260;tone(f*(.8+Math.random()*.4),b.mat==='metal'||b.mat==='glass'?'triangle':'square',b.mat==='metal'?.5:.12,vol,f*.5);
+ if(b.mat==='wood'||b.mat==='stone'){const s=AC.createBufferSource();s.buffer=window._noise;const fl=AC.createBiquadFilter();fl.type='lowpass';fl.frequency.value=b.mat==='stone'?900:500;const g=AC.createGain();env(g,.002,vol,.15);s.connect(fl).connect(g).connect(sfxBus);s.start();s.stop(AC.currentTime+.2);}}
+function deskGrabToggle(){if(G.held[1]){release(1);G.held[1]&&release(1);return;}if(swordHand>=0)sheathe();camera.getWorldDirection(fwd);const p=headW.clone().addScaledVector(fwd,1.1);p.y=Math.max(.2,p.y-.9);const b=nearestBody(p,1.1);if(b){b.obj.position.copy(handHolder[1].position);grab(b,1);}}
+function deskThrow(){const b=G.held[1];if(!b)return;release(1);camera.getWorldDirection(fwd);b.vel.copy(fwd).multiplyScalar(9/Math.sqrt(Math.max(1,b.mass))).add(new THREE.Vector3(0,2,0));b.ang.set(Math.random()*8,Math.random()*8,0);b.thrown=true;}
+window.__grab={bodies:()=>G.bodies.map(b=>({k:b.kind,m:b.mass,y:+b.obj.position.y.toFixed(2),sleep:b.sleep,held:b.hands.size})),deskGrab:deskGrabToggle,deskThrow,near:()=>{camera.getWorldDirection(fwd);const p=headW.clone().addScaledVector(fwd,1.1);p.y=.4;return nearestBody(p,3)?.kind}};
+window.__G_dbg=()=>G.bodies;
+
+// =================== Real Life Physics System: axe, hip holster, tree chopping & felling ===================
+var hipAnchor=new THREE.Group();hipAnchor.position.set(-.21,-.62,.02);hipAnchor.rotation.set(0,0,.12);torso.add(hipAnchor);
+var axe=new THREE.Group(),axeTip=new THREE.Object3D(),axeEdgeDir=new THREE.Vector3(0,0,1),axePrevTip=new THREE.Vector3(),AXP=[false,false];
+const AXE_IN_HAND=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(-1,0,0),new THREE.Vector3(0,0,-1),new THREE.Vector3(0,-1,0))); // handle(+Y)->grip -Z, edge(+Z)->grip -Y
+async function loadAxe(){const g=await loadG('assets/models/wooden_axe.glb');const m=g.scene;const S=1.3;m.scale.setScalar(S);m.position.set(0,.17*S,0);// grip near the handle end
+ m.traverse(o=>{if(o.isMesh)o.castShadow=false;});axe.add(m);axeTip.position.set(0,.36,.13);m.add(axeTip);holsterAxe(true);}
+function drawAxe(i){axeHand=i;handHolder[i].add(axe);axe.position.set(0,0,0);axe.quaternion.copy(AXE_IN_HAND);sfx?.swing?.();}
+function holsterAxe(silent){axeHand=-1;hipAnchor.add(axe);axe.position.set(0,-.05,0);axe.quaternion.identity();if(!silent)sfx?.swing?.();}
+function updateAxeHolster(xr){if(!xr)return;for(let i=0;i<2;i++){if(!gripObj[i])continue;const g=!!srcs[i]?.gamepad?.buttons[1]?.pressed;const hp=handHolder[i].position;
+  if(g&&!AXP[i]&&axeHand===-1&&swordHand!==i&&!G.held[i]&&hp.distanceTo(hipAnchor.getWorldPosition(_v3))<.3){drawAxe(i);hapticI(i,1,120);}
+  if(!g&&AXP[i]&&axeHand===i){holsterAxe();hapticI(i,.6,80);}AXP[i]=g;}}
+// wood chips / dust (small pooled particles)
+const CHIPS=[];const chipG=new THREE.BoxGeometry(.03,.012,.05),chipM=new THREE.MeshStandardMaterial({color:0xc8a070,roughness:.9});
+const dustT=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');const r=g.createRadialGradient(32,32,0,32,32,32);r.addColorStop(0,'rgba(120,105,90,.6)');r.addColorStop(1,'rgba(120,105,90,0)');g.fillStyle=r;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);})();
+function spawnChips(p,dir,n){for(let k=0;k<n;k++){const m=new THREE.Mesh(chipG,chipM);m.position.copy(p);scene.add(m);CHIPS.push({m,v:dir.clone().multiplyScalar(1.5+Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*2,1+Math.random()*1.5,(Math.random()-.5)*2)),r:new THREE.Vector3(Math.random()*20,Math.random()*20,0),life:1.5});}}
+function spawnDust(p,n,size=1.5){for(let k=0;k<n;k++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:dustT,transparent:true,depthWrite:false,opacity:.7}));sp.position.copy(p).add(new THREE.Vector3((Math.random()-.5)*2,.3,(Math.random()-.5)*2));sp.scale.setScalar(size*.4);scene.add(sp);CHIPS.push({m:sp,v:new THREE.Vector3((Math.random()-.5),.4+Math.random()*.4,(Math.random()-.5)),dust:true,life:2.2,size});}}
+function chopSound(hard){if(!AC)return;const s=AC.createBufferSource();s.buffer=window._noise;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=hard?900:3200;f.Q.value=2;const g=AC.createGain();env(g,.002,hard?.5:.18,hard?.18:.08);s.connect(f).connect(g).connect(sfxBus);s.start();s.stop(AC.currentTime+.3);tone(hard?130:1800,hard?'square':'triangle',hard?.15:.25,hard?.25:.08,hard?70:1500);}
+function creakSound(){if(!AC)return;const o=AC.createOscillator();o.type='sawtooth';const t=AC.currentTime;o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(45,t+2.2);const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=500;f.Q.value=6;const g=AC.createGain();env(g,.3,.35,2);o.connect(f).connect(g).connect(sfxBus);o.start();o.stop(t+2.6);}
+function thudSound(m){if(!AC)return;const s=AC.createBufferSource();s.buffer=window._noise;const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=220;const g=AC.createGain();env(g,.005,Math.min(1,.5*m),1.4);s.connect(f).connect(g).connect(sfxBus);s.start();s.stop(AC.currentTime+1.6);tone(48,'sine',.8,.6,28);}
+const FALLING=[];
+function treesNear(x,z){const out=[];const kx=Math.floor(x/4),kz=Math.floor(z/4);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=F.hash.get((kx+a)+','+(kz+b));if(l)for(const t of l)if(t.v!==undefined&&t.r>0)out.push(t);}return out;}
+let axeSwingCd=0;
+function weaponTreeHit(tip,vel,speed,isAxe,hand,xr){const now=clock.elapsedTime;
+ for(const t of treesNear(tip.x,tip.z)){const d=Math.hypot(tip.x-t.x,tip.z-t.z);if(d>t.r+.12||tip.y<.15||tip.y>2.4)continue;if(now-(t.lastHit||0)<.3)continue;
+  const edgeOK=!xr||!isAxe||vel.clone().normalize().dot(axeEdgeDir)>.45;const hard=speed>(xr?3.5:2);t.lastHit=now;
+  const toC=new THREE.Vector3(t.x-tip.x,0,t.z-tip.z).normalize();const surf=new THREE.Vector3(t.x,tip.y,t.z).addScaledVector(toC,-t.r*.9);
+  if(isAxe&&hard&&edgeOK){t.hits++;chopSound(true);hapticI(hand,1,70);spawnChips(surf,toC.clone().negate(),6);
+   const n=new THREE.Mesh(new THREE.BoxGeometry(.12,.06,.05),new THREE.MeshStandardMaterial({color:0xd8b080,roughness:1}));n.position.copy(surf);n.lookAt(t.x,tip.y,t.z);scene.add(n);(t.notches=t.notches||[]).push(n);
+   const need=Math.ceil(4+t.r*18);if(t.hits===need-2)say('The trunk groans...',1.5);if(t.hits>=need)fellTree(t,toC);}
+  else{t.hits+=isAxe?.25:.08;chopSound(false);hapticI(hand,.35,30);if(!isAxe){const sc_=new THREE.Mesh(new THREE.BoxGeometry(.1,.008,.01),new THREE.MeshBasicMaterial({color:0x9a8a70}));sc_.position.copy(surf);sc_.lookAt(t.x,tip.y,t.z);sc_.rotateZ(Math.random()*3);scene.add(sc_);}}
+  return true;}return false;}
+function fellTree(t,dir){const ref=t.M._ref;ref.im.setMatrixAt(ref.i,new THREE.Matrix4().makeScale(0,0,0));ref.im.instanceMatrix.needsUpdate=true;const r0=t.r;t.r=0;
+ const pos=new THREE.Vector3(),q=new THREE.Quaternion(),sc=new THREE.Vector3();t.M.decompose(pos,q,sc);
+ const piv=new THREE.Group();piv.position.copy(pos);scene.add(piv);const mesh=new THREE.Mesh(F.treeGeos[t.v],barkMat);mesh.quaternion.copy(q);mesh.scale.copy(sc);mesh.castShadow=true;piv.add(mesh);
+ for(const n of t.notches||[])piv.attach(n);
+ const fd=dir.clone().setY(0).normalize();const axis=new THREE.Vector3(0,1,0).cross(fd).normalize();creakSound();haptic(.6,300);
+ FALLING.push({t,piv,axis,fd,th:.03,w:0,L:4.5*sc.y,r0,done:false});}
+function updateFallingTrees(dt){for(const f of FALLING){if(f.done)continue;const a=1.5*9.81/f.L*Math.sin(f.th);f.w+=a*dt;f.th+=f.w*dt;
+  if(f.th>=1.48){f.th=1.48;f.done=true;const base=f.piv.position;thudSound(f.r0*3);haptic(1,350);for(let k=1;k<5;k++)spawnDust(base.clone().addScaledVector(f.fd,f.L*k/5),2,2);
+   for(const e of enemies){if(e.dead)continue;const ep=e.mesh.position.clone().sub(base);const along=ep.dot(f.fd),perp=ep.clone().addScaledVector(f.fd,-along).setY(0).length();if(along>0&&along<f.L&&perp<1.1){const d=3+Math.floor(Math.random()*16);e.hp-=d;e.stun=2;sfx.hit();if(e.hp<=0){e.dead=true;e.cur=null;play(e,'Death',.1);e.deadT=3;say(`The falling tree crushes the ${e.type}!`,2.5);}}}
+   // fallen trunk becomes a static obstacle
+   for(let d=.6;d<f.L*.9;d+=.7){const p=base.clone().addScaledVector(f.fd,d);const t2={x:p.x,z:p.z,r:Math.max(.25,f.r0*.8*(1-d/f.L))};const k=Math.floor(p.x/4)+','+Math.floor(p.z/4);if(!F.hash.has(k))F.hash.set(k,[]);F.hash.get(k).push(t2);}}
+  f.piv.quaternion.setFromAxisAngle(f.axis,f.th);}
+ for(let i=CHIPS.length-1;i>=0;i--){const c=CHIPS[i];c.life-=dt;if(c.dust){c.m.position.addScaledVector(c.v,dt);c.m.scale.setScalar(c.size*(.4+(2.2-c.life)*.5));c.m.material.opacity=Math.max(0,c.life/2.2*.6);}
+  else{c.v.y-=9.81*dt;c.m.position.addScaledVector(c.v,dt);if(c.m.position.y<.01){c.m.position.y=.01;c.v.multiplyScalar(.3);c.v.y=0;}else{c.m.rotation.x+=c.r.x*dt;c.m.rotation.y+=c.r.y*dt;}}
+  if(c.life<=0&&(c.dust||CHIPS.length>120)){scene.remove(c.m);c.m.material.dispose?.();CHIPS.splice(i,1);}else if(c.life<=0&&!c.dust)c.life=9999;}}
+function updateAxe(dt,xr,pp){axeTip.updateWorldMatrix(true,false);const tip=axeTip.getWorldPosition(new THREE.Vector3());const vel=tip.clone().sub(axePrevTip).divideScalar(Math.max(dt,1e-3));const speed=vel.length();axePrevTip.copy(tip);
+ axeEdgeDir.set(0,0,1).applyQuaternion(axeTip.parent.getWorldQuaternion(new THREE.Quaternion()));
+ if(axeHand<0||!SET.physics)return;const swingingA=xr?speed>2.5:desktopSwing>0.05&&desktopSwing<.3;if(!swingingA)return;
+ weaponTreeHit(tip,vel,speed,true,axeHand,xr);
+ for(const e of enemies){if(e.dead||(e.hitCd||0)>0)continue;const c=new THREE.Vector3(e.mesh.position.x,1.2,e.mesh.position.z);if(tip.distanceTo(c)<.6||(!xr&&e.mesh.position.distanceTo(pp)<2.2&&inFront(e.mesh.position))){e.hitCd=.45;if(hitEnemy(e,xr?speed:5))hapticI(axeHand,1,90);}}}
+window.__axe={draw:()=>drawAxe(1),holster:()=>holsterAxe(),hand:()=>axeHand,tree:()=>{const t=F.trees.find(t=>t.r>0);return t},chop:(t,n)=>{for(let k=0;k<n;k++){t.lastHit=0;const tip=new THREE.Vector3(t.x+t.r+.05,1.1,t.z);weaponTreeHit(tip,new THREE.Vector3(-6,0,0),6,true,1,false);}return {hits:t.hits,need:Math.ceil(4+t.r*18),falling:FALLING.length,r:t.r};},step:(n)=>{for(let k=0;k<n;k++)updateFallingTrees(1/72);return {fallen:FALLING.filter(f=>f.done).length,chips:CHIPS.length}},falling:()=>FALLING.map(f=>({th:+f.th.toFixed(2),done:f.done}))};
