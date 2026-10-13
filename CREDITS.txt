@@ -1,0 +1,19 @@
+The Hollow Keep - asset credits & licenses
+
+Code: original, written for this project.
+three.js r160 (lib/three/) - MIT License, (c) 2010-2023 three.js authors. https://threejs.org  (see lib/three/LICENSE)
+
+Textures (assets/tex/) - Poly Haven, CC0 1.0 (public domain), 1K JPG:
+  wall_*   = "Castle Brick 07"      https://polyhaven.com/a/castle_brick_07
+  floor_*  = "Cobblestone Floor 04" https://polyhaven.com/a/cobblestone_floor_04
+  block_*  = "Medieval Blocks 02"   https://polyhaven.com/a/medieval_blocks_02
+  wood_*   = "Wood Planks"          https://polyhaven.com/a/wood_planks
+  metal_*  = "Rusty Metal 02"       https://polyhaven.com/a/rusty_metal_02
+
+Models (assets/models/):
+  zombie.glb  - "Zombie" by Quaternius (Zombie Apocalypse Kit), CC0 1.0. https://poly.pizza/m/VlXjG0N8Eg / https://quaternius.com
+  soldier.glb - "Soldier.glb" from the three.js examples (examples/models/gltf/Soldier.glb), character & animations
+                originally from Adobe Mixamo. Distributed with three.js; Mixamo content is royalty-free for use in
+                projects but is not CC0 - replace with a CC0 human if a fully public-domain build is required.
+
+Longsword, sheath, torch, cloak, castle props, particles, cobwebs, parchment and all audio are procedural (generated in code).

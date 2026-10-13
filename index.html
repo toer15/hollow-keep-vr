@@ -1,10 +1,10 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,"><title>Alden Kael: The Hollow Keep</title>
 <style>body{margin:0;background:#000;color:#ccc;font-family:serif;overflow:hidden}#hud{position:fixed;top:10px;left:10px;font-size:16px;text-shadow:0 0 4px #000;pointer-events:none;white-space:pre}#msg{position:fixed;bottom:80px;width:100%;text-align:center;font-size:20px;color:#e8d8b0;pointer-events:none;text-shadow:0 0 6px #000}#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.85);text-align:center}#start button{font-size:20px;padding:10px 24px;margin:6px;cursor:pointer}</style>
-<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="importmap">{"imports":{"three":"./lib/three/three.module.js","three/addons/":"./lib/three/addons/"}}</script>
 </head><body>
 <div id="start"><h1>The Hollow Keep</h1><p>You are Alden Kael, swordsman. Find 5 journal pages, then escape through the north gate.</p>
 <p>Desktop: click to play · WASD move · mouse look · F = draw/sheathe sword · click = swing · Q = potion · Shift = sprint<br>Quest: Enter VR · left stick move · right stick snap turn · reach over shoulder + GRIP to draw sword (either hand), release GRIP to sheathe · swing to attack · A/X = potion</p>
-<button id="play">Play on Desktop</button></div>
-<div id="hud"></div><div id="msg"></div>
+<p id="loading">Loading textures &amp; models...</p><button id="play">Play on Desktop</button></div>
+<div id="vig" style="position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.75) 100%)"></div><div id="hud"></div><div id="msg"></div>
 <script type="module" src="game.js"></script></body></html>
